@@ -252,7 +252,7 @@ Notes: This needs to be able to work well together with VS installations.  To do
     - Download workload manifest MSI NuGet package (to temporary folder)
   - Extract MSI to the package cache
   - Install MSI
-  - Add ref count to workload manifest MSI ref count key: `Dependents\Microsoft.NET.Sdk,<SDK Band>`
+  - Add ref count to workload manifest MSI: `HKLM\Software\Classes\Installer\Dependencies\<DependencyProviderKey>\Dependents\Microsoft.NET.Sdk,<SDK Band>`
   - ...
 - Read / write workload installation record
 - Workload installation record: Registry
@@ -326,9 +326,9 @@ Ref counting for the workload manifest MSIs will work as follows:
 - Standardize on `SdkFeatureBand` for terminology
 - Should we put "Manifest" in the NuGet package IDs for manifests to help disambiguate from workload packs?
 - How do we get the SemVer version of a workload manifest NuGet package from just the installed version of the workload manifest?  It seems we either need to update the manifest schema to support a semantic version for the version, or we need to store the semantic version separately (ie in a text file).
-
 - Need to figure out a way to generate an MSI version number for workload manifest MSI.  As much as possible, the MSI version number for manifest version A should be greater than the MSI version number for manifest version B if and only if the NuGet semantic version for version A of the manifest is greater than the NuGet semantic version for version B of the manifest
 - How does MSI IAL know what the DependencyProviderKey for a workload manifest MSI is?  Convention?  File in workload manifest folder when installed by MSI?  File that is always in the workload manifest (including NuGet version)?
+- How does VS / Willow IAL know which version of Visual Studio to use?
 
 
 # Updates to existing behavior / specs
