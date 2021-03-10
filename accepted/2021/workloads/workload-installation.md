@@ -336,6 +336,7 @@ Ref counting for the workload manifest MSIs will work as follows:
 - TODO: How do we handle baseline manifests when we update to a new SDK band?  We want the existing workloads to continue to work without requiring a workload to update the baseline manifest immediately.  However, for installers such as MSIs, the package owned by the workload will lay out the workload manifest in the feature band folder.  So when we update the SDK to feature band 6.0.200, the installers for the workload manifests will still lay them out in the 6.0.100 sdk-manifests folder.
   - Proposal: Have file listing included manifests IDs in `<DOTNET ROOT>/sdk-manifests/<FEATURE VERSION BAND>/`.  If workload resolver doesn't find a manifest for one of those IDs in the current feature band folder, it will look at previous feature band folders until it finds it, and use that.  (Should it error if not found?  Not sure)
 - TODO: Workload resolver should ignore folders in the manifests folder that start with `.`, under both `<DOTNET ROOT>/sdk-manifests/` and `<DOTNET ROOT>/sdk-manifests/<FEATURE VERSION BAND>/`.  That way installer abstractions or other code can store information there, such as the workload installation records
+- Version in workload manifest json should be a string to store semantic versions.  Workload manifest reader will need to be able to compare semantic versions when validating manifest dependency versions.
 
 
 # Updates since review
