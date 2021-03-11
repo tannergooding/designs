@@ -169,7 +169,7 @@ To install updated manifests, the following process will be used (for each workl
 
 # Installer implementations
 
-## Files on Disk IAL Implementation
+## .NET SDK managed IAL Implementation
  
 - Unit of installation: Workload packs
 - Install workload pack
@@ -206,7 +206,7 @@ To install updated manifests, the following process will be used (for each workl
 
 ### Workload Pack installation records and garbage collection
 
-A workload pack installation record for a workload pack that is in use will be an empty file with the path `<DOTNET ROOT>/sdk-manifests/.installedpacks/v1/<Pack ID>/<Pack Version>/<SdkFeatureBand>/.active`.  The `v1` element in the path gives us some flexibility to change the format in a later version if we need to.  If the folder exists but the `.active` file doesn't, that indicates that the SDK Band no longer needs the workload pack, but that the files may be on disk and may be used by another band.  When there are no SDK bands with an `.active` file for the installation record, then the workload pack can be deleted from disk, and then the whole workload pack installation record folder can be deleted.
+A workload pack installation record will be a folder with the path `<DOTNET ROOT>/sdk-manifests/.installedpacks/v1/<Pack ID>/<Pack Version>/`.  The `v1` element in the path gives us some flexibility to change the format in a later version if we need to.  A reference count for an SDK feature band will be a `<SdkFeatureBand>` folder under the installation record folder.  When there are no SDK band reference count folders under a workload pack installation record folder, then the workload pack can be deleted from disk, and then the whole workload pack installation record folder can be deleted.
 
 Thus, the garbage collection process will be as follows:
 
@@ -214,15 +214,14 @@ Thus, the garbage collection process will be as follows:
 - Get installed workloads for current SDK feature band
 - Using current workload manifest, map from currently installed workloads to all pack IDs and versions that should be installed for the current band
 - For each pack / version combination where there is an installation record folder (ie `<DOTNET ROOT>/sdk-manifests/.installedpacks/v1/<Pack ID>/<Pack Version>/`):
-  - Delete any folders that correspond to a band that is not an installed SDK
-  - If there is a folder that corresponds to the current SDK band where the pack ID and version is not in the list that should be installed for the current band, delete the `.active` file (if it exists) from that folder
-  - If none of the SDK feature band folders now contain a `.active` file, then the workload pack can be garbage collected
+  - Delete any reference count folders that correspond to a band that is not an installed SDK
+  - If the pack ID and version is not in the list that should be installed for the current band, and there is a reference count folder for the current band, then delete that reference count folder
+  - If there are now no reference count folders under the workload pack installation record folder, then the workload pack can be garbage collected
     - Delete the workload pack file or folder from disk
     - Delete the workload pack installation record folder: `<DOTNET ROOT>/sdk-manifests/.installedpacks/v1/<Pack ID>/<Pack Version>/`
+    - Also delete the `<Pack ID>` folder if there are no longer any `<Pack Version>` folders under it
  
-## MSI (Standalone) IAL Implementation
-
-Notes: This needs to be able to work well together with VS installations.  To do this, it should keep a record of the MSIs it installed (ie a workload pack installation record).  If it needs to install a pack that VS has already installed but that the Standalone Installer implementation hasn't, then it still needs to "install" that MSI or otherwise increment the MSI installation ref-count.
+## Standalone Windows IAL Implementation
 
 - Unit of installation: Workload packs
 - Install workload pack
@@ -235,6 +234,7 @@ Notes: This needs to be able to work well together with VS installations.  To do
     - Extract MSI from .nupkg to the MSI package cache
     - Install MSI
   - Add ref count for workload pack in registry.  Create `Dependents\Microsoft.NET.Sdk,<SDK Band>` under MSI ref counting key
+    - If we don't have a direct way to get the DependencyProviderKey which is part of the MSI ref counting key, we can look it up as it is stored as a value under the workload pack installation record key
   - Rollback:
     - Delete registry key for ref count
     - If MSI was installed as part of this operation
@@ -252,19 +252,18 @@ Notes: This needs to be able to work well together with VS installations.  To do
     - Download workload manifest MSI NuGet package (to temporary folder)
   - Extract MSI to the package cache
   - Install MSI
-  - Add ref count to workload manifest MSI: `HKLM\Software\Classes\Installer\Dependencies\<DependencyProviderKey>\Dependents\Microsoft.NET.Sdk,<SDK Band>`
-  - ...
+  - Add ref count to workload manifest MSI: `Dependents\Microsoft.NET.Sdk,<SDK Band>` under workload manifest MSI ref counting key
+  - Rollback:
+    - Delete registry key for ref count
+    - Uninstall MSI
+    - Delete MSI from MSI package cache
+    - If MSI NuGet package was downloaded, then delete it from the temporary folder
 - Read / write workload installation record
-- Workload installation record: Registry
-  - `HKLM\SOFTWARE\Microsoft\dotnet\InstalledWorkloads\<SdkFeatureBand>\<WorkloadID>`
-
-Garbage collection notes:
-- Uninstall workload pack
-  - Uninstall MSI
-  - What do we need to do this?  Actual MSI on disk, or a Product GUID, or what?
-  - Delete MSI from package cache
-
-How do we track "active" workload packs?
+  - Workload installation records will be stored as a key in the registry: `HKLM\SOFTWARE\Microsoft\dotnet\InstalledWorkloads\<SdkFeatureBand>\<WorkloadID>`
+  - These records will be shared with Visual Studio (installing a workload from Visual Studio should write the same key)
+  - Read: List keys under `SdkFeatureBand` key
+  - Write: Create key
+  - Delete: Delete key
 
 ### Workload pack MSIs
 - MSI should create the following keys in the registry:
@@ -288,6 +287,22 @@ Ref counting for the workload manifest MSIs will work as follows:
 - When the standalone bundle is uninstalled, it will remove its ref count key, and then uninstall the MSI if a newer MSI hasn't been installed and there are no other ref counts
 - The custom bundle finalizer will remove the ref created by the MSI (Standalone) IAL implementation, and uninstall the MSI if there are no other refs
 
+### Garbage collection
+
+The garbage collection process for the Standalone Windows IAL will be similar to the .NET SDK managed IAL implementation, just with a different method of storing the workload and workload pack installation records.
+
+- Get installed SDK versions and map them to SDK feature bands (ie 6.0.200-preview6 or 6.0.205 would map to 6.0.200)
+- Get installed workloads for current SDK feature band
+- Using current workload manifest, map from currently installed workloads to all pack IDs and versions that should be installed for the current band
+- Iterate over installed workload pack records (in registry under ``HKLM\SOFTWARE\Microsoft\dotnet\InstalledPacks\<Pack ID>\<Pack Version>`)
+  - Read the `DependencyProviderKey` value under the workload pack installation record key
+  - Read workload pack MSI reference count keys, which will have the path `HKLM\Software\Classes\Installer\Dependencies\<DependencyProviderKey>\Dependents\Microsoft.NET.Sdk,<SDK Band>`
+  - Delete any reference count keys corresponding to an SDK band which is no longer installed
+  - If the pack ID and version is not in the list that should be installed for the current band, then delete the reference count key for the current band (if it exists)
+  - If there are now no reference count keys for the workload pack MSI, then the workload pack can be garbage collected
+    - Uninstall the MSI
+    - Uninstalling the MSI should delete the workload pack ref counting key and the workload pack installation record key in the registry, as they were created by the MSI when it was installed
+    - Delete the MSI from the package cache
 
 ## VS (Willow) IAL Implementation
 - What's the priority on this?  Do we really need it (especially at first)?
@@ -325,10 +340,12 @@ Ref counting for the workload manifest MSIs will work as follows:
 - Add option to allow creating offline cache for future SDK release band.  This is to support VS for Mac, and will be best effort (because the workload manifest format may change)
 - Standardize on `SdkFeatureBand` for terminology
 - Should we put "Manifest" in the NuGet package IDs for manifests to help disambiguate from workload packs?
-- How do we get the SemVer version of a workload manifest NuGet package from just the installed version of the workload manifest?  It seems we either need to update the manifest schema to support a semantic version for the version, or we need to store the semantic version separately (ie in a text file).
 - Need to figure out a way to generate an MSI version number for workload manifest MSI.  As much as possible, the MSI version number for manifest version A should be greater than the MSI version number for manifest version B if and only if the NuGet semantic version for version A of the manifest is greater than the NuGet semantic version for version B of the manifest
 - How does MSI IAL know what the DependencyProviderKey for a workload manifest MSI is?  Convention?  File in workload manifest folder when installed by MSI?  File that is always in the workload manifest (including NuGet version)?
 - How does VS / Willow IAL know which version of Visual Studio to use?
+- Normalize names of IAL implementations
+- Normalize "ref" to "reference"
+- QUESTION: What sort of identifier do we need in order to uninstall a workload pack or workload manifest MSI?  We need this for the garbage collection process.  Is the DependencyProviderKey enough?
 
 
 # Updates to existing behavior / specs
