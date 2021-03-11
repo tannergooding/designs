@@ -306,11 +306,24 @@ The garbage collection process for the Standalone Windows IAL will be similar to
 
 ## VS (Willow) IAL Implementation
 - What's the priority on this?  Do we really need it (especially at first)?
+
+How to call Willow
+- Find VS installation
+- Call `vs_enterprise.exe /q`, with workload or component IDs
+- Workload and component IDs are strings that are something like Microsoft.VisualStudio.Workload.Android
+- Willow installer will elevate as necessary
  
 ## VS Installation
  
 - Won't be going through normal workload flow, will just be installing the MSIs
 - Needs to interact correctly with checking whether packs are installed, garbage collecting
+- Should install multiple workload installation records, one the same as the standalone IAL, and one which records that the VS workload has been installed.  This should hopefully let us do the right IPA if only the .NET SDK workload has been installed, as well as better handle the situation where a standalone-installed SDK is being used with VS.  The VS workload installation record should be per VS version, not SDK band.
+
+
+Mapping of .NET SDK workload IDs to VS workload or component IDs:
+- If this is convention-based, it simplifies the in-product acquisition flow.  The workload resolver can return missing SDK workload names, and the project system can know what VS workloads / components need to be installed
+
+What do we do if there are RID aliases in the workload manifest?  How do we generate MSIs and VS setup authoring?
 
 # Notes
 
@@ -320,12 +333,10 @@ The garbage collection process for the Standalone Windows IAL will be similar to
 - How does the workload manifest get updated? - See update process
 - For Standalone MSI installer implementation, we should ref-count per SDK band, which means we can handle garbage collection / cleanup even if we aren't the highest installed version
 - TODO: How do we list all installed workload packs for .NET SDK managed install?  We may not have the manifests available for previously installed versions which left workload packs hanging around.
+- TODO: Spec out package names and versions for each installer abstraction
 
 ## Open / TODO
 
-- How do we differentiate between 32 and 64 bit MSI installers?
-- TODO: Spec out package names and versions for each installer abstraction
-  - Integers for manifest versions?
 - TODO: What do we call the files on disk / xcopy / universal installer?
 - What happens when you have an standalone installation of the SDK that's being used in Visual Studio and you try to use VS's in product acquisition
 - How to handle versioning of workload manifests versus workloads represented as packages (e.g. apt)
@@ -334,8 +345,7 @@ The garbage collection process for the Standalone Windows IAL will be similar to
 - IAL-specific mappings / data should go in manifest package installed by IAL, but not generic .nupkg
   - This probably doesn't work for all cases, for example the VS installer
 - How to handle elevation for standalone installer
-- Registry path for MSI workload pack installation record
-- How to handle workload installation record for VS / Willow PAL?  We can't rely on writing / deleting the records in our installation process, as that process won't be used if installing with Willow.
+- How to handle workload installation record for VS / Willow PAL?  We can't rely on writing / deleting the records in our installation process, as that process won't be used if installing with Willow.  Answer: VS will need an MSI that writes workload installation record
 - PM question: After update to SDK, when we realize that there are workloads you previously had installed, is it OK to suggest an install command that lists out all the workloads to install, or do we need a new command to "sync" to previously installed workloads
 - Add option to allow creating offline cache for future SDK release band.  This is to support VS for Mac, and will be best effort (because the workload manifest format may change)
 - Standardize on `SdkFeatureBand` for terminology
@@ -345,7 +355,12 @@ The garbage collection process for the Standalone Windows IAL will be similar to
 - How does VS / Willow IAL know which version of Visual Studio to use?
 - Normalize names of IAL implementations
 - Normalize "ref" to "reference"
-- QUESTION: What sort of identifier do we need in order to uninstall a workload pack or workload manifest MSI?  We need this for the garbage collection process.  Is the DependencyProviderKey enough?
+- QUESTION: What sort of identifier do we need in order to uninstall a workload pack or workload manifest MSI?  We need this for the garbage collection process.  Is the DependencyProviderKey enough?  Ideally we want product code, upgrade code, and product version
+- Get feedback from Linux packaging experts on feasibility of implementing an IAL
+- Get "real" example of how we plan to structure workloads, and work out how the VS mapping will work for it
+- Put data about MSI in text file in MSI NuGet packages, including product code, upgrade code, product version, providerKey.  This information makes it easier to install the MSI correctly
+  - We should probably also store this data somewhere (registry? ProgramData?) for uninstall
+- Do we check for disk space before trying to install MSIs?
 
 
 # Updates to existing behavior / specs
